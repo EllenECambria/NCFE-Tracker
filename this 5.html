@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Learning Pathway: Sport & Activity Innovators</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Firebase CDN Imports -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global Firebase variables accessible in the main script
+        window.firebaseApp = null;
+        window.firestoreDb = null;
+        window.firebaseAuth = null;
+        window.currentUserId = null;
+        window.userProgressDocRef = null;
+        window.initializeApp = initializeApp;
+        window.getAuth = getAuth;
+        window.signInAnonymously = signInAnonymously;
+        window.signInWithCustomToken = signInWithCustomToken;
+        window.onAuthStateChanged = onAuthStateChanged;
+        window.getFirestore = getFirestore;
+        window.doc = doc;
+        window.setDoc = setDoc;
+        window.onSnapshot = onSnapshot;
+    </script>
+
+    <!-- Chosen Palette: "Warm Harmony" - A warm, neutral background (beige) with slate and amber accents for a professional, calm, and focused learning environment. -->
+    <!-- Application Structure Plan: A two-column dashboard layout. A fixed sidebar provides clear, persistent navigation through the 8 modules. The main content area dynamically displays the details of the selected module. At the top, a visual "Learning Pathway" diagram provides context and a secondary navigation method. Checkboxes are integrated at the individual learning outcome/activity level, and roll up to module-level checkboxes in the sidebar and visual pathway. This structure was chosen for its intuitive user flow, allowing users to easily switch between modules without losing their place, which is ideal for exploring a structured curriculum, now with added progress tracking. Firestore integration allows for cross-device synchronization of progress based on user ID. -->
+    <!-- Visualization & Content Choices: The core of the application is dynamic content display with progress tracking. Report Info: The 8-module structure. Goal: Organize, Inform, and Track Progress. Viz/Presentation: A clickable vertical navigation bar and a horizontal "pathway" diagram made with HTML/CSS. Checkboxes are HTML input elements. Interaction: Clicking a module in either the nav bar or the pathway diagram updates the main content area via JavaScript. Clicking any checkbox updates its state in Firestore and triggers updates to parent module checkboxes. Justification: This approach turns a static document into an interactive, trackable syllabus, making the learning journey tangible and easy to navigate. It uses simple, effective HTML-based visuals and inputs for this qualitative, process-oriented data with persistent cross-device progress tracking. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #FDFBF8; /* Warm Beige */
+        }
+        .nav-button {
+            transition: all 0.2s ease-in-out;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .nav-button-text {
+            flex-grow: 1;
+            text-align: left;
+        }
+        .nav-button.active {
+            background-color: #FBBF24; /* Amber 400 */
+            color: #1F2937; /* Gray 800 */
+            font-weight: 600;
+        }
+        .nav-button:not(.active):hover {
+            background-color: #475569; /* Slate 600 */
+        }
+        .path-step {
+            transition: all 0.2s ease-in-out;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        .path-step.active {
+            background-color: #FBBF24; /* Amber 400 */
+            border-color: #FBBF24;
+            color: #1F2937;
+        }
+        .path-step:not(.active):hover {
+            background-color: #475569;
+            border-color: #475569;
+            color: #FFFFFF;
+        }
+        .path-line {
+            height: 2px;
+            background-color: #CBD5E1; /* Slate 300 */
+            top: 50%;
+            transform: translateY(-50%);
+        }
+        .content-card ul {
+            list-style-position: inside;
+        }
+        .content-card ul li {
+            position: relative;
+            padding-left: 1.5rem;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: flex-start;
+        }
+        .content-card ul li input[type="checkbox"] {
+            margin-right: 0.5rem;
+            flex-shrink: 0;
+            margin-top: 0.25rem; /* Adjust for vertical alignment with text */
+        }
+        .content-card ul li span {
+            flex-grow: 1;
+        }
+        .module-checkbox-container {
+            margin-left: 0.5rem;
+            flex-shrink: 0;
+        }
+        .path-step .module-checkbox-container {
+            position: absolute;
+            top: -10px; /* Adjust as needed for placement above the circle */
+            right: -10px; /* Adjust as needed for placement to the right of the circle */
+            z-index: 20;
+        }
+        .path-step input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+        }
+        #loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            transition: opacity 0.3s ease-in-out;
+        }
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #FBBF24; /* Amber */
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 1rem;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="text-slate-700">
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay">
+        <div class="spinner" id="loading-spinner"></div>
+        <p id="loading-message" class="text-slate-700 text-lg">Loading application...</p>
+    </div>
+
+    <div class="min-h-screen flex flex-col lg:flex-row">
+        <!-- Sidebar Navigation -->
+        <aside class="w-full lg:w-64 bg-slate-800 text-white p-4 lg:p-6 flex-shrink-0">
+            <h1 class="text-2xl font-bold text-white mb-4">Learning Pathway</h1>
+            <p id="user-id-display" class="text-sm text-slate-400 mb-8 truncate">User ID: Loading...</p>
+            <nav id="module-navigation" class="space-y-2">
+                <button data-module="1" class="nav-button w-full px-4 py-3 rounded-lg">
+                    <span class="nav-button-text">Module 1: The Landscape</span>
+                    <span class="module-checkbox-container">
+                        <input type="checkbox" id="nav-module-1-checkbox" data-module-checkbox="1">
+                    </span>
+                </button>
+                <button data-module="2" class="nav-button w-full px-4 py-3 rounded-lg">
+                    <span class="nav-button-text">Module 2: Sport Development</span>
+                    <span class="module-checkbox-container">
+                        <input type="checkbox" id="nav-module-2-checkbox" data-module-checkbox="2">
+                    </span>
+                </button>
+                <button data-module="3" class="nav-button w-full px-4 py-3 rounded-lg">
+                    <span class="nav-button-text">Module 3: Marketing Foundations</span>
+                    <span class="module-checkbox-container">
+                        <input type="checkbox" id="nav-module-3-checkbox" data-module-checkbox="3">
+                    </span>
+                </button>
+                <button data-module="4" class="nav-button w-full px-4 py-3 rounded-lg">
+                    <span class="nav-button-text">Module 4: Crafting Campaigns</span>
+                    <span class="module-checkbox-container">
+                        <input type="checkbox" id="nav-module-4-checkbox" data-module-checkbox="4">
+                    </span>
+                </button>
+                <button data-module="5" class="nav-button w-full px-4 py-3 rounded-lg">
+                    <span class="nav-button-text">Module 5: Campaign Evolution</span>
+                    <span class="module-checkbox-container">
+                        <input type="checkbox" id="nav-module-5-checkbox" data-module-checkbox="5">
+                    </span>
+                </button>
+                <button data-module="6" class="nav-button w-full px-4 py-3 rounded-lg">
+                    <span class="nav-button-text">Module 6: Designing Initiatives</span>
+                    <span class="module-checkbox-container">
+                        <input type="checkbox" id="nav-module-6-checkbox" data-module-checkbox="6">
+                    </span>
+                </button>
+                <button data-module="7" class="nav-button w-full px-4 py-3 rounded-lg">
+                    <span class="nav-button-text">Module 7: Personal Branding</span>
+                    <span class="module-checkbox-container">
+                        <input type="checkbox" id="nav-module-7-checkbox" data-module-checkbox="7">
+                    </span>
+                </button>
+                <button data-module="8" class="nav-button w-full px-4 py-3 rounded-lg">
+                    <span class="nav-button-text">Module 8: Interview Mastery</span>
+                    <span class="module-checkbox-container">
+                        <input type="checkbox" id="nav-module-8-checkbox" data-module-checkbox="8">
+                    </span>
+                </button>
+            </nav>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 p-4 sm:p-6 lg:p-10">
+            <div class="max-w-7xl mx-auto">
+                <!-- Header -->
+                <header class="mb-8">
+                    <h2 class="text-4xl font-bold text-slate-900">Sport & Activity Industry Innovators</h2>
+                    <p class="mt-2 text-lg text-slate-600">An interactive guide to your learning journey, from industry fundamentals to career launch.</p>
+                </header>
+
+                <!-- Visual Pathway -->
+                <section id="visual-pathway" class="mb-12">
+                     <p class="text-sm font-medium text-slate-600 mb-4">Click any step to explore the module.</p>
+                    <div class="relative">
+                        <div class="path-line absolute w-full"></div>
+                        <div class="relative flex justify-between">
+                            <div data-module="1" class="path-step z-10 w-8 h-8 flex items-center justify-center rounded-full border-2 border-slate-300 bg-white cursor-pointer font-semibold">
+                                1
+                                <span class="module-checkbox-container">
+                                    <input type="checkbox" id="path-module-1-checkbox" data-module-checkbox="1">
+                                </span>
+                            </div>
+                            <div data-module="2" class="path-step z-10 w-8 h-8 flex items-center justify-center rounded-full border-2 border-slate-300 bg-white cursor-pointer font-semibold">
+                                2
+                                <span class="module-checkbox-container">
+                                    <input type="checkbox" id="path-module-2-checkbox" data-module-checkbox="2">
+                                </span>
+                            </div>
+                            <div data-module="3" class="path-step z-10 w-8 h-8 flex items-center justify-center rounded-full border-2 border-slate-300 bg-white cursor-pointer font-semibold">
+                                3
+                                <span class="module-checkbox-container">
+                                    <input type="checkbox" id="path-module-3-checkbox" data-module-checkbox="3">
+                                </span>
+                            </div>
+                            <div data-module="4" class="path-step z-10 w-8 h-8 flex items-center justify-center rounded-full border-2 border-slate-300 bg-white cursor-pointer font-semibold">
+                                4
+                                <span class="module-checkbox-container">
+                                    <input type="checkbox" id="path-module-4-checkbox" data-module-checkbox="4">
+                                </span>
+                            </div>
+                            <div data-module="5" class="path-step z-10 w-8 h-8 flex items-center justify-center rounded-full border-2 border-slate-300 bg-white cursor-pointer font-semibold">
+                                5
+                                <span class="module-checkbox-container">
+                                    <input type="checkbox" id="path-module-5-checkbox" data-module-checkbox="5">
+                                </span>
+                            </div>
+                            <div data-module="6" class="path-step z-10 w-8 h-8 flex items-center justify-center rounded-full border-2 border-slate-300 bg-white cursor-pointer font-semibold">
+                                6
+                                <span class="module-checkbox-container">
+                                    <input type="checkbox" id="path-module-6-checkbox" data-module-checkbox="6">
+                                </span>
+                            </div>
+                            <div data-module="7" class="path-step z-10 w-8 h-8 flex items-center justify-center rounded-full border-2 border-slate-300 bg-white cursor-pointer font-semibold">
+                                7
+                                <span class="module-checkbox-container">
+                                    <input type="checkbox" id="path-module-7-checkbox" data-module-checkbox="7">
+                                </span>
+                            </div>
+                            <div data-module="8" class="path-step z-10 w-8 h-8 flex items-center justify-center rounded-full border-2 border-slate-300 bg-white cursor-pointer font-semibold">
+                                8
+                                <span class="module-checkbox-container">
+                                    <input type="checkbox" id="path-module-8-checkbox" data-module-checkbox="8">
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Dynamic Module Content -->
+                <div id="module-content-area">
+                    <!-- Module 1 -->
+                    <div id="module-1" class="module-content">
+                        <div class="bg-white p-8 rounded-xl shadow-lg content-card">
+                            <h3 class="text-3xl font-bold text-slate-800 mb-4">Module 1: Navigating the Sport & Activity Landscape</h3>
+                            <p class="text-slate-600 mb-6">This foundational module provides a comprehensive understanding of the diverse employment opportunities and current trends shaping the sport and physical activity sector. It sets the stage for understanding where various roles and initiatives fit within the broader industry.</p>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <h4 class="font-semibold text-xl text-slate-700 mb-3 border-b-2 border-amber-300 pb-2">Learning Outcomes</h4>
+                                    <ul class="space-y-2 text-slate-600">
+                                        <li><input type="checkbox" id="m1-lo1" data-module="1" data-type="lo"><span>Identify employment opportunities across contrasting organisations.</span></li>
+                                        <li><input type="checkbox" id="m1-lo2" data-module="1" data-type="lo"><span>Describe the impact of current trends on employment.</span></li>
+                                        <li><input type="checkbox" id="m1-lo3" data-module="1" data-type="lo"><span>Describe a range of job roles, including entry requirements, skills, and salary.</span></li>
+                                    </ul>
+                                </div>
+                                <div>
+                                    <h4 class="font-semibold text-xl text-slate-700 mb-3 border-b-2 border-amber-300 pb-2">Engaging Activities</h4>
+                                     <ul class="space-y-2 text-slate-600">
+                                        <li><input type="checkbox" id="m1-act1" data-module="1" data-type="activity"><span>Create a digital careers guide booklet in the "Industry Explorer Challenge".</span></li>
+                                        <li><input type="checkbox" id="m1-act2" data-module="1" data-type="activity"><span>Research and present on a current trend in "Trend Spotting & Impact Analysis".</span></li>
+                                        <li><input type="checkbox" id="m1-act3" data-module="1" data-type="activity"><span>Gain perspectives from professionals in Virtual Industry Panels.</span></li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Module 2 -->
+                    <div id="module-2" class="module-content hidden">
+                         <div class="bg-white p-8 rounded-xl shadow-lg content-card">
+                            <h3 class="text-3xl font-bold text-slate-800 mb-4">Module 2: Understanding Sport Development</h3>
+                            <p class="text-slate-600 mb-6">This module focuses on understanding existing sports development initiatives. You will learn to describe and review programs aimed at promoting sport and physical activity, using the sport development continuum as a key framework.</p>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <h4 class="font-semibold text-xl text-slate-700 mb-3 border-b-2 border-amber-300 pb-2">Learning Outcomes</h4>
+                                    <ul class="space-y-2 text-slate-600">
+                                        <li><input type="checkbox" id="m2-lo1" data-module="2" data-type="lo"><span>Describe local and national sports development initiatives.</span></li>
+                                        <li><input type="checkbox" id="m2-lo2" data-module="2" data-type="lo"><span>Explain the sport development continuum (foundation, participation, performance, excellence).</span></li>
+                                        <li><input type="checkbox" id="m2-lo3" data-module="2" data-type="lo"><span>Review initiatives considering rationale, impact, costs, and target groups.</span></li>
+                                        <li><input type="checkbox" id="m2-lo4" data-module="2" data-type="lo"><span>Describe the roles of parties involved (NGBs, local authorities, schools).</span></li>
+                                    </ul>
+                                </div>
+                                <div>
+                                    <h4 class="font-semibold text-xl text-slate-700 mb-3 border-b-2 border-amber-300 pb-2">Engaging Activities</h4>
+                                     <ul class="space-y-2 text-slate-600">
+                                        <li><input type="checkbox" id="m2-act1" data-module="2" data-type="activity"><span>Analyze initiatives and map them to the continuum in "Continuum Case Studies".</span></li>
+                                        <li><input type="checkbox" id="m2-act2" data-module="2" data-type="activity"><span>Research local initiatives in the "Community Impact Project Analysis".</span></li>
+                                        <li><input type="checkbox" id="m2-act3" data-module="2" data-type="activity"><span>Create visual "Stakeholder Maps" to illustrate roles and relationships.</span></li>
+                                        <li><input type="checkbox" id="m2-act4" data-module="2" data-type="activity"><span>Learn from a professional Sports Development Officer guest speaker.</span></li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Module 3 -->
+                    <div id="module-3" class="module-content hidden">
+                         <div class="bg-white p-8 rounded-xl shadow-lg content-card">
+                            <h3 class="text-3xl font-bold text-slate-800 mb-4">Module 3: The Business of Sport: Marketing Foundations</h3>
+                            <p class="text-slate-600 mb-6">This module delves into the fundamental principles that underpin successful marketing in the sport sector. You'll explore core concepts like the 4 P's, market analysis, and strategies for engaging and retaining customers.</p>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <h4 class="font-semibold text-xl text-slate-700 mb-3 border-b-2 border-amber-300 pb-2">Learning Outcomes</h4>
+                                    <ul class="space-y-2 text-slate-600">
+                                        <li><input type="checkbox" id="m3-lo1" data-module="3" data-type="lo"><span>Describe the components of marketing (Product, Price, Promotion, Place).</span></li>
+                                        <li><input type="checkbox" id="m3-lo2" data-module="3" data-type="lo"><span>Explain the purpose and value of marketing in sport.</span></li>
+                                        <li><input type="checkbox" id="m3-lo3" data-module="3" data-type="lo"><span>Describe methods for customer retention and loyalty.</span></li>
+                                        <li><input type="checkbox" id="m3-lo4" data-module="3" data-type="lo"><span>Identify, differentiate, and use target markets effectively.</span></li>
+                                    </ul>
+                                </div>
+                                <div>
+                                    <h4 class="font-semibold text-xl text-slate-700 mb-3 border-b-2 border-amber-300 pb-2">Engaging Activities</h4>
+                                     <ul class="space-y-2 text-slate-600">
+                                        <li><input type="checkbox" id="m3-act1" data-module="3" data-type="activity"><span>Analyze marketing strategies of major brands in "Sporting Brands Decoded".</span></li>
+                                        <li><input type="checkbox" id="m3-act2" data-module="3" data-type="activity"><span>Brainstorm loyalty programs in the "Fan Loyalty Lab" workshop.</span></li>
+                                        <li><input type="checkbox" id="m3-act3" data-module="3" data-type="activity"><span>Gain insights from marketing professionals in a guest speaker series.</span></li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Module 4 -->
+                    <div id="module-4" class="module-content hidden">
+                         <div class="bg-white p-8 rounded-xl shadow-lg content-card">
+                            <h3 class="text-3xl font-bold text-slate-800 mb-4">Module 4: Crafting Compelling Campaigns</h3>
+                            <p class="text-slate-600 mb-6">This module is all about practical application. You will be guided through the process of producing a comprehensive marketing campaign for a real or simulated sport and physical activity entity, putting your foundational knowledge to the test.</p>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <h4 class="font-semibold text-xl text-slate-700 mb-3 border-b-2 border-amber-300 pb-2">Learning Outcomes</h4>
+                                    <ul class="space-y-2 text-slate-600">
+                                        <li><input type="checkbox" id="m4-lo1" data-module="4" data-type="lo"><span>Produce a marketing campaign including promotion, cost, resources, and target market.</span></li>
+                                        <li><input type="checkbox" id="m4-lo2" data-module="4" data-type="lo"><span>Examine an organisation and produce a report on its marketing mix.</span></li>
+                                        <li><input type="checkbox" id="m4-lo3" data-module="4" data-type="lo"><span>Analyze the market, competitors, and product positioning.</span></li>
+                                    </ul>
+                                </div>
+                                <div>
+                                    <h4 class="font-semibold text-xl text-slate-700 mb-3 border-b-2 border-amber-300 pb-2">Engaging Activities</h4>
+                                     <ul class="space-y-2 text-slate-600">
+                                        <li><input type="checkbox" id="m4-act1" data-module="4" data-type="activity"><span>Work on a "Live Client Brief" from a local sports organization.</span></li>
+                                        <li><input type="checkbox" id="m4-act2" data-module="4" data-type="activity"><span>Design campaign assets in the "Digital Campaign Design Sprint".</span></li>
+                                        <li><input type="checkbox" id="m4-act3" data-module="4" data-type="activity"><span>Present your campaign to a panel of experts in "Pitch Perfect".</span></li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Module 5 -->
+                    <div id="module-5" class="module-content hidden">
+                         <div class="bg-white p-8 rounded-xl shadow-lg content-card">
+                            <h3 class="text-3xl font-bold text-slate-800 mb-4">Module 5: Campaign Impact & Evolution</h3>
+                            <p class="text-slate-600 mb-6">This module encourages critical reflection. You will review the effectiveness of your marketing campaign choices, analyze its impact, and consider future developments to improve your strategic thinking.</p>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <h4 class="font-semibold text-xl text-slate-700 mb-3 border-b-2 border-amber-300 pb-2">Learning Outcomes</h4>
+                                    <ul class="space-y-2 text-slate-600">
+                                        <li><input type="checkbox" id="m5-lo1" data-module="5" data-type="lo"><span>Review the evidence used to prepare a campaign.</span></li>
+                                        <li><input type="checkbox" id="m5-lo2" data-module="5" data-type="lo"><span>Review the methods used to develop the campaign.</span></li>
+                                        <li><input type="checkbox" id="m5-lo3" data-module="5" data-type="lo"><span>Produce a rationale explaining why each element was chosen.</span></li>
+                                        <li><input type="checkbox" id="m5-lo4" data-module="5" data-type="lo"><span>Comment on challenges, difficulties, and decision-making.</span></li>
+                                    </ul>
+                                </div>
+                                <div>
+                                    <h4 class="font-semibold text-xl text-slate-700 mb-3 border-b-2 border-amber-300 pb-2">Engaging Activities</h4>
+                                     <ul class="space-y-2 text-slate-600">
+                                        <li><input type="checkbox" id="m5-act1" data-module="5" data-type="activity"><span>Analyze mock data in the "Post-Campaign Analytics Workshop".</span></li>
+                                        <li><input type="checkbox" id="m5-act2" data-module="5" data-type="activity"><span>Document your journey in a "Reflective Practitioner Journal".</span></li>
+                                        <li><input type="checkbox" id="m5-act3" data-module="5" data-type="activity"><span>Share insights with peers in a "Lessons Learned Roundtable".</span></li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Module 6 -->
+                    <div id="module-6" class="module-content hidden">
+                         <div class="bg-white p-8 rounded-xl shadow-lg content-card">
+                            <h3 class="text-3xl font-bold text-slate-800 mb-4">Module 6: Designing & Evaluating Sport Development Initiatives</h3>
+                            <p class="text-slate-600 mb-6">Building on your knowledge, you will now design, present, and critically evaluate your own sport development initiative. This is a chance to be creative and apply your understanding of both development and marketing principles.</p>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <h4 class="font-semibold text-xl text-slate-700 mb-3 border-b-2 border-amber-300 pb-2">Learning Outcomes</h4>
+                                    <ul class="space-y-2 text-slate-600">
+                                        <li><input type="checkbox" id="m6-lo1" data-module="6" data-type="lo"><span>Design a sports development initiative for a specific target group.</span></li>
+                                        <li><input type="checkbox" id="m6-lo2" data-module="6" data-type="lo"><span>Present the initiative effectively to an audience.</span></li>
+                                        <li><input type="checkbox" id="m6-lo3" data-module="6" data-type="lo"><span>Review your own performance in planning and presenting.</span></li>
+                                        <li><input type="checkbox" id="m6-lo4" data-module="6" data-type="lo"><span>Consider strengths and areas for improvement using SWOT or a journal.</span></li>
+                                    </ul>
+                                </div>
+                                <div>
+                                    <h4 class="font-semibold text-xl text-slate-700 mb-3 border-b-2 border-amber-300 pb-2">Engaging Activities</h4>
+                                     <ul class="space-y-2 text-slate-600">
+                                        <li><input type="checkbox" id="m6-act1" data-module="6" data-type="activity"><span>Create a professional "Sport Development Pitch Deck".</span></li>
+                                        <li><input type="checkbox" id="m6-act2" data-module="6" data-type="activity"><span>Present to a "Simulated Funding Panel" for realistic feedback.</span></li>
+                                        <li><input type="checkbox" id="m6-act3" data-module="6" data-type="activity"><span>Give and receive feedback in a "Peer Review & Refinement" session.</span></li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Module 7 -->
+                    <div id="module-7" class="module-content hidden">
+                         <div class="bg-white p-8 rounded-xl shadow-lg content-card">
+                            <h3 class="text-3xl font-bold text-slate-800 mb-4">Module 7: Personal Brand & Professional Preparation</h3>
+                            <p class="text-slate-600 mb-6">This module focuses on you. It empowers you to identify your strengths, prepare compelling application documents, and understand the recruitment process for your chosen career path in the sport industry.</p>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <h4 class="font-semibold text-xl text-slate-700 mb-3 border-b-2 border-amber-300 pb-2">Learning Outcomes</h4>
+                                    <ul class="space-y-2 text-slate-600">
+                                        <li><input type="checkbox" id="m7-lo1" data-module="7" data-type="lo"><span>Explore your skills, qualifications, and experience for a chosen pathway.</span></li>
+                                        <li><input type="checkbox" id="m7-lo2" data-module="7" data-type="lo"><span>Research different aspects of the application process.</span></li>
+                                        <li><input type="checkbox" id="m7-lo3" data-module="7" data-type="lo"><span>Prepare professional application documents (CV, cover letter).</span></li>
+                                    </ul>
+                                </div>
+                                <div>
+                                    <h4 class="font-semibold text-xl text-slate-700 mb-3 border-b-2 border-amber-300 pb-2">Engaging Activities</h4>
+                                     <ul class="space-y-2 text-slate-600">
+                                        <li><input type="checkbox" id="m7-act1" data-module="7" data-type="activity"><span>Complete a "Skills Audit & Gap Analysis Workshop".</span></li>
+                                        <li><input type="checkbox" id="m7-act2" data-module="7" data-type="activity"><span>Build your brand in the "Professional Profile Power-Up" session.</span></li>
+                                        <li><input type="checkbox" id="m7-act3" data-module="7" data-type="activity"><span>Experience the digital process in an "Application Simulation".</span></li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Module 8 -->
+                    <div id="module-8" class="module-content hidden">
+                        <div class="bg-white p-8 rounded-xl shadow-lg content-card">
+                            <h3 class="text-3xl font-bold text-slate-800 mb-4">Module 8: Interview Mastery & Career Progression</h3>
+                            <p class="text-slate-600 mb-6">The final module provides the opportunity to practice and refine your interview skills. This is followed by critical self-evaluation and the development of a strategic action plan for your future career.</p>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div>
+                                    <h4 class="font-semibold text-xl text-slate-700 mb-3 border-b-2 border-amber-300 pb-2">Learning Outcomes</h4>
+                                    <ul class="space-y-2 text-slate-600">
+                                        <li><input type="checkbox" id="m8-lo1" data-module="8" data-type="lo"><span>Prepare for and participate in a professional interview.</span></li>
+                                        <li><input type="checkbox" id="m8-lo2" data-module="8" data-type="lo"><span>Evaluate your own interview performance critically.</span></li>
+                                        <li><input type="checkbox" id="m8-lo3" data-module="8" data-type="lo"><span>Consider feedback from peers, tutors, or interviewers.</span></li>
+                                        <li><input type="checkbox" id="m8-lo4" data-module="8" data-type="lo"><span>Produce a comprehensive action plan for improvement.</span></li>
+                                    </ul>
+                                </div>
+                                <div>
+                                    <h4 class="font-semibold text-xl text-slate-700 mb-3 border-b-2 border-amber-300 pb-2">Engaging Activities</h4>
+                                     <ul class="space-y-2 text-slate-600">
+                                        <li><input type="checkbox" id="m8-act1" data-module="8" data-type="activity"><span>Practice with an "AI Interview Coach" for instant feedback.</span></li>
+                                        <li><input type="checkbox" id="m8-act2" data-module="8" data-type="activity"><span>Use "Video Analysis & Self-Reflection" to improve performance.</span></li>
+                                        <li><input type="checkbox" id="m8-act3" data-module="8" data-type="activity"><span>Practice networking in a "Mentorship Speed Dating" session.</span></li>
+                                        <li><input type="checkbox" id="m8-act4" data-module="8" data-type="activity"><span>Create a SMART action plan in the "Personal Development Sprint".</span></li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script type="module">
+        // Access global Firebase variables from the window object
+        const initializeApp = window.initializeApp;
+        const getAuth = window.getAuth;
+        const signInAnonymously = window.signInAnonymously;
+        const signInWithCustomToken = window.signInWithCustomToken;
+        const getFirestore = window.getFirestore;
+        const doc = window.doc;
+        const setDoc = window.setDoc;
+        const onSnapshot = window.onSnapshot;
+
+        let app;
+        let db;
+        let auth;
+        let userId;
+        let userDocRef; // Reference to the user's progress document
+
+        // MANDATORY: Access __app_id and __firebase_config from the Canvas environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        const navButtons = document.querySelectorAll('#module-navigation .nav-button');
+        const pathSteps = document.querySelectorAll('#visual-pathway .path-step');
+        const moduleContents = document.querySelectorAll('.module-content');
+        const allCheckboxes = document.querySelectorAll('input[type="checkbox"]');
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const loadingMessage = document.getElementById('loading-message');
+        const userIdDisplay = document.getElementById('user-id-display');
+
+        // Function to save progress to Firestore
+        async function saveProgress(checkboxId, isChecked) {
+            if (!userDocRef) {
+                console.warn("Firestore not initialized or user not authenticated yet. Cannot save progress.");
+                return;
+            }
+            try {
+                // Use setDoc with merge: true to update only the specific checkbox state
+                await setDoc(userDocRef, { [checkboxId]: isChecked }, { merge: true });
+            } catch (error) {
+                console.error("Error saving progress to Firestore:", error);
+            }
+        }
+
+        // Function to update module completion status based on child checkboxes
+        function updateModuleCompletion(moduleNumber) {
+            const moduleContentDiv = document.getElementById(`module-${moduleNumber}`);
+            if (!moduleContentDiv) return;
+
+            const individualCheckboxes = moduleContentDiv.querySelectorAll(`input[type="checkbox"][data-module="${moduleNumber}"][data-type="lo"], input[type="checkbox"][data-module="${moduleNumber}"][data-type="activity"]`);
+            let allChecked = true;
+            if (individualCheckboxes.length > 0) {
+                allChecked = Array.from(individualCheckboxes).every(checkbox => checkbox.checked);
+            } else {
+                allChecked = false; // If no checkboxes, module cannot be marked as complete by children
+            }
+
+            const navModuleCheckbox = document.getElementById(`nav-module-${moduleNumber}-checkbox`);
+            const pathModuleCheckbox = document.getElementById(`path-module-${moduleNumber}-checkbox`);
+
+            if (navModuleCheckbox) navModuleCheckbox.checked = allChecked;
+            if (pathModuleCheckbox) pathModuleCheckbox.checked = allChecked;
+        }
+
+        // Function to display the selected module content
+        function showModule(moduleNumber) {
+            moduleContents.forEach(content => {
+                content.classList.add('hidden');
+            });
+
+            navButtons.forEach(button => button.classList.remove('active'));
+            pathSteps.forEach(step => step.classList.remove('active'));
+            
+            const activeContent = document.getElementById(`module-${moduleNumber}`);
+            if (activeContent) {
+                activeContent.classList.remove('hidden');
+            }
+
+            const activeButton = document.querySelector(`.nav-button[data-module="${moduleNumber}"]`);
+            if (activeButton) {
+                activeButton.classList.add('active');
+            }
+
+            const activeStep = document.querySelector(`.path-step[data-module="${moduleNumber}"]`);
+            if (activeStep) {
+                activeStep.classList.add('active');
+            }
+        }
+
+        // Initialize Firebase and authenticate user
+        async function initializeFirebase() {
+            if (Object.keys(firebaseConfig).length === 0) {
+                loadingMessage.textContent = 'Error: Firebase configuration missing.';
+                document.getElementById('loading-spinner').classList.add('hidden');
+                console.error("Firebase config is missing. Cannot initialize Firebase.");
+                return;
+            }
+            
+            loadingMessage.textContent = 'Initializing Firebase...';
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+            window.firestoreDb = db; // Make db globally accessible if needed elsewhere
+            window.firebaseAuth = auth; // Make auth globally accessible if needed elsewhere
+
+            loadingMessage.textContent = 'Authenticating user...';
+            try {
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                userId = auth.currentUser?.uid || crypto.randomUUID(); // Fallback for unauthenticated or missing uid
+                window.currentUserId = userId; // Make userId globally accessible
+                userIdDisplay.textContent = `User ID: ${userId}`;
+                
+                // Define the Firestore document reference for user's progress
+                userDocRef = doc(db, `artifacts/${appId}/users/${userId}/learningProgress/mainProgress`);
+                window.userProgressDocRef = userDocRef; // Make docRef globally accessible
+
+                // Start listening for real-time updates to the user's progress
+                startListeningForProgress();
+
+            } catch (error) {
+                console.error("Firebase authentication error:", error);
+                loadingMessage.textContent = `Authentication failed: ${error.message}`;
+                document.getElementById('loading-spinner').classList.add('hidden');
+            }
+        }
+
+        // Start listening for real-time progress updates from Firestore
+        function startListeningForProgress() {
+            loadingMessage.textContent = 'Loading progress...';
+            onSnapshot(userDocRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const progress = docSnap.data();
+                    allCheckboxes.forEach(checkbox => {
+                        // Ensure we only update checkboxes that are part of the content, not the module-level ones
+                        if (checkbox.hasAttribute('data-type')) {
+                            if (progress[checkbox.id] !== undefined) {
+                                checkbox.checked = progress[checkbox.id];
+                            }
+                        }
+                    });
+                } else {
+                    // Document doesn't exist, maybe first time user. Create an empty document.
+                    console.log("No existing progress found for this user, initializing new.");
+                    setDoc(userDocRef, {});
+                }
+                // After loading/initializing, update all module completion statuses
+                for (let i = 1; i <= 8; i++) {
+                    updateModuleCompletion(i);
+                }
+                loadingOverlay.classList.add('hidden'); // Hide loading overlay once data is loaded
+                showModule(1); // Show the first module by default after loading
+            }, (error) => {
+                console.error("Error listening to Firestore:", error);
+                loadingMessage.textContent = `Error loading progress: ${error.message}`;
+                document.getElementById('loading-spinner').classList.add('hidden');
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', initializeFirebase);
+
+        // Add click listeners to navigation buttons (excluding the checkbox itself)
+        navButtons.forEach(button => {
+            button.addEventListener('click', (event) => {
+                if (!event.target.closest('input[type="checkbox"]')) {
+                    const moduleNumber = button.getAttribute('data-module');
+                    showModule(moduleNumber);
+                }
+            });
+        });
+
+        // Add click listeners to path steps (excluding the checkbox itself)
+        pathSteps.forEach(step => {
+            step.addEventListener('click', (event) => {
+                if (!event.target.closest('input[type="checkbox"]')) {
+                    const moduleNumber = step.getAttribute('data-module');
+                    showModule(moduleNumber);
+                }
+            });
+        });
+
+        // Add change listeners to all individual content checkboxes (LOs and Activities)
+        document.querySelectorAll('.module-content input[type="checkbox"]').forEach(checkbox => {
+            checkbox.addEventListener('change', (event) => {
+                saveProgress(event.target.id, event.target.checked);
+                const moduleNumber = event.target.getAttribute('data-module');
+                updateModuleCompletion(moduleNumber);
+            });
+        });
+
+        // Add change listeners to module-level checkboxes (sidebar and pathway)
+        document.querySelectorAll('input[data-module-checkbox]').forEach(checkbox => {
+            checkbox.addEventListener('change', async (event) => {
+                const moduleNumber = event.target.getAttribute('data-module-checkbox');
+                const isChecked = event.target.checked;
+
+                // Sync the other module-level checkbox
+                const otherCheckboxId = (event.target.id.startsWith('nav-') ? 'path-' : 'nav-') + `module-${moduleNumber}-checkbox`;
+                const otherCheckbox = document.getElementById(otherCheckboxId);
+                if (otherCheckbox) {
+                    otherCheckbox.checked = isChecked;
+                }
+
+                // Update all individual checkboxes within that module and save to Firestore
+                const moduleContentDiv = document.getElementById(`module-${moduleNumber}`);
+                if (moduleContentDiv) {
+                    const individualCheckboxes = moduleContentDiv.querySelectorAll(`input[type="checkbox"][data-module="${moduleNumber}"][data-type="lo"], input[type="checkbox"][data-module="${moduleNumber}"][data-type="activity"]`);
+                    const updates = {};
+                    individualCheckboxes.forEach(childCheckbox => {
+                        childCheckbox.checked = isChecked;
+                        updates[childCheckbox.id] = isChecked;
+                    });
+                    if (userDocRef) {
+                        try {
+                            await setDoc(userDocRef, updates, { merge: true });
+                        } catch (error) {
+                            console.error("Error updating module children in Firestore:", error);
+                        }
+                    }
+                }
+            });
+        });
+    </script>
+
+</body>
+</html>
