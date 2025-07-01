@@ -506,9 +506,22 @@
         let userDocRef; // Reference to the user's progress document
 
         // MANDATORY: Access __app_id and __firebase_config from the Canvas environment
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        // Your actual Firebase configuration from Firebase Console
+const firebaseConfig = {
+  apiKey: "AIzaSyB3rhOYCQKq0MZUQtXVc_p3xtRqIq6ssIM",
+  authDomain: "ncfe-l3-tracker.firebaseapp.com",
+  projectId: "ncfe-l3-tracker"
+  storageBucket: "ncfe-l3-tracker.firebasestorage.app",
+  messagingSenderId: "281250583152",
+  appId: "1:281250583152:web:2d155a95712bc0d7e01ab5"
+  // measurementId: "G-GW5SQ9TGNP"
+};
+
+// Use your Firebase projectId as the appId for the Firestore path
+const appId = firebaseConfig.projectId;
+// For external hosting, initialAuthToken is not applicable unless you generate custom tokens server-side.
+// We'll rely on signInAnonymously for simplicity.
+const initialAuthToken = null;
 
         const navButtons = document.querySelectorAll('#module-navigation .nav-button');
         const pathSteps = document.querySelectorAll('#visual-pathway .path-step');
